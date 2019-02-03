@@ -11,7 +11,7 @@ public class Adfsecurity5ApplicationTests {
 
 	@Test
 	public void contextLoads() {
-	}
+	} 
 
 }
 
