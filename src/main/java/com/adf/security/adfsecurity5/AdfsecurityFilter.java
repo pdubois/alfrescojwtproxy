@@ -27,8 +27,6 @@ import org.springframework.mock.web.DelegatingServletInputStream;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-
-
 public class AdfsecurityFilter implements Filter
 {
 
@@ -45,63 +43,66 @@ public class AdfsecurityFilter implements Filter
         if (request instanceof HttpServletRequest)
         {
             HttpServletRequest req = (HttpServletRequest) request;
-            
+
             String pathInfo = req.getPathInfo();
-            // this under is done for 2 reasons:
-            // HEADERS can not be added directly on the request
-            // and BODY can only be read once
-            HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req);
 
             // check if trying to get a ticket by checking the following url:
-            //  /alfresco/api/-default-/public/authentication/versions/1/tickets
-            if(pathInfo.startsWith("/alfresco/api/-default-/public/authentication/versions/1/tickets") && 
-                    req.getMethod().equalsIgnoreCase("POST"))
+            // /alfresco/api/-default-/public/authentication/versions/1/tickets
+            if (pathInfo.startsWith("/alfresco/api/-default-/public/authentication/versions/1/tickets")
+                    && req.getMethod().equalsIgnoreCase("POST"))
             {
+                // this under is done for 2 reasons:
+                // HEADERS can not be added directly on the request
+                // and BODY can only be read once this is why
+                // peek body is set to true
+                HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req, true);
 
                 // requestWrapper.addHeader("remote_addr", remote_addr);
                 System.out.println("****************  In AdfsecurityFilter: " + req.getPathInfo());
                 System.out.println("****************  In AdfsecurityFilter password: " + req.getParameter("password"));
 
-                
                 String bodyString = new String(requestWrapper.getStoredBody());
                 System.out.println("****************  In AdfsecurityFilter BODY: " + bodyString);
-                
+
                 ObjectMapper mapper = new ObjectMapper();
                 JsonNode theJsonBody = mapper.readTree(bodyString);
                 System.out.println("********The Claimed user is: " + theJsonBody.get("userId").toString());
                 System.out.println("********The JWT token is: " + theJsonBody.get("password"));
-                
-                //Do here the JWT checking/verification
-                //if All OK then
+
+                // Do here the JWT checking/verification
+                // if All OK then
                 requestWrapper.addHeader("X-Alfresco-Remote-User", theJsonBody.get("userId").toString());
-               
+
                 HttpServletResponse responseOK = (HttpServletResponse) response;
-                
-                //responseOK.setStatus(200);
-                
-                //responseOK.sendError(200);
-                //responseOK.setCode(200);
-                
-                
+
+                // responseOK.setStatus(200);
+
+                // responseOK.sendError(200);
+                // responseOK.setCode(200);
+
                 PrintWriter out = response.getWriter();
                 response.setContentType("application/json");
                 response.setCharacterEncoding("UTF-8");
-                // Assuming your json object is **jsonObject**, perform the following, it will return your json object  
+                // Assuming your json object is **jsonObject**, perform the following, it will
+                // return your json object
                 out.print("{\"entry\":{\"id\":\"TICKET_tagada\",\"userId\":\"admin@app.activiti.com\"}}");
                 out.flush();
-                
+
                 // When getting ticket body is a json similar to:
-                // 
-                // parse the JSON in bodyString and position the header with user it claims to be.
-                
+                //
+                // parse the JSON in bodyString and position the header with user it claims to
+                // be.
+
                 // http://localhost:8082/alfresco/api/-default-/public/authentication/versions/1/tickets
-                //chain.doFilter(requestWrapper, response); // Goal to default servlet.
-            }
-            else
+                // chain.doFilter(requestWrapper, response); // Goal to default servlet.
+            } else
             {
-                //if All OK then
+                // we do not need to peek the body here
+                // just need to to be able to add the "X-Alfresco-Remote-User" for Alfresco
+                HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req, false);
+                //verify jwt token here
+                // if All OK then
                 requestWrapper.addHeader("X-Alfresco-Remote-User", "admin@app.activiti.com");
-               
                 chain.doFilter(requestWrapper, response); // Goes to default servlet.
             }
         } else
@@ -128,9 +129,11 @@ public class AdfsecurityFilter implements Filter
     public class HeaderMapRequestWrapper extends HttpServletRequestWrapper
     {
         private byte[] body;
-        
+
+        private boolean peekBody = false;
+
         /**
-         * 
+         * This method should only be 
          * @return bytes of the body.
          */
         public byte[] getStoredBody()
@@ -139,28 +142,46 @@ public class AdfsecurityFilter implements Filter
         }
         
         /**
+         * 
+         * @param request
+         * @param peekBody
+         */
+        public HeaderMapRequestWrapper(HttpServletRequest request, boolean peekBody) {
+            super(request);
+
+            if (peekBody == true)
+            {
+                try
+                {
+                    // duplicate the body so it can be read more then once
+                    final InputStream in = request.getInputStream();
+                    Vector<Byte> bodyVector = new Vector<Byte>();
+                    for (int b = 0; ((b = in.read()) >= 0);)
+                    {
+                        bodyVector.add((byte) b);
+                    }
+                    body = new byte[bodyVector.size()];
+                    for (int i = 0; i < bodyVector.size(); i++)
+                    {
+                        body[i] = bodyVector.get(i);
+                    }
+                    in.close();
+                } catch (IOException ex)
+                {
+                    body = new byte[0];
+                    // add some log
+                }
+            }
+        }
+
+        /**
          * construct a wrapper for this request
          * 
          * @param request
          */
         public HeaderMapRequestWrapper(HttpServletRequest request) {
             super(request);
-            try {
-                //duplicate the body so it can be read more then once
-                final InputStream in = request.getInputStream();
-                Vector<Byte> bodyVector = new Vector<Byte>();
-                for (int b = 0; ((b = in.read()) >= 0);) {
-                    bodyVector.add((byte)b);
-                }
-                body = new byte[bodyVector.size()];
-                for(int i = 0; i< bodyVector.size(); i++)
-                {
-                    body[i] = bodyVector.get(i);
-                } 
-                in.close();
-            } catch (IOException ex) {
-                body = new byte[0];
-            }
+            peekBody = false;
         }
 
         private Map<String, String> headerMap = new HashMap<String, String>();
@@ -178,9 +199,9 @@ public class AdfsecurityFilter implements Filter
 
         @Override
         public String getHeader(String name)
-        {   
-            //if(name.startsWith("Authorization"))
-            //    return null;
+        {
+            // if(name.startsWith("Authorization"))
+            // return null;
             String headerValue = super.getHeader(name);
             // requestWrapper YWRtaW5AYXBwLmFjdGl2aXRpLmNvbTphZG1pbg==
             if (headerMap.containsKey(name))
@@ -199,8 +220,8 @@ public class AdfsecurityFilter implements Filter
             List<String> names = Collections.list(super.getHeaderNames());
             for (String name : headerMap.keySet())
             {
-              //  if(!name.startsWith("Authorization"))
-                 names.add(name);
+                // if(!name.startsWith("Authorization"))
+                names.add(name);
             }
             return Collections.enumeration(names);
         }
@@ -215,11 +236,14 @@ public class AdfsecurityFilter implements Filter
             }
             return Collections.enumeration(values);
         }
-        
-        @Override
-        public ServletInputStream getInputStream() throws IOException {
 
-            return new DelegatingServletInputStream(new ByteArrayInputStream(body));
+        @Override
+        public ServletInputStream getInputStream() throws IOException
+        {
+            if (peekBody == true)
+                return new DelegatingServletInputStream(new ByteArrayInputStream(body));
+            else
+                return super.getInputStream();
 
         }
 
