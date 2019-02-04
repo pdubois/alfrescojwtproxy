@@ -9,6 +9,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Vector;
 
 import javax.servlet.Filter;
@@ -22,6 +23,8 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletRequestWrapper;
 import javax.servlet.http.HttpServletResponse;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.DelegatingServletInputStream;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -29,7 +32,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class AdfsecurityFilter implements Filter
 {
-
+    private static final Logger logger = LoggerFactory.getLogger(AdfsecurityFilter.class);
+    
+    private static ThreadLocal<Random> random = new ThreadLocal<Random>() {
+        @Override
+        protected Random initialValue() {
+            return new Random(
+                System.currentTimeMillis() *
+                Thread.currentThread().getId());
+        }
+    };
+    
     @Override
     public void destroy()
     {
@@ -40,6 +53,8 @@ public class AdfsecurityFilter implements Filter
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException
     {
+        int ran = random.get().nextInt(100000);
+        logger.info("Entering doFilter (" + ran  + ")");
         if (request instanceof HttpServletRequest)
         {
             HttpServletRequest req = (HttpServletRequest) request;
@@ -58,56 +73,59 @@ public class AdfsecurityFilter implements Filter
                 HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req, true);
 
                 // requestWrapper.addHeader("remote_addr", remote_addr);
-                System.out.println("****************  In AdfsecurityFilter: " + req.getPathInfo());
-                System.out.println("****************  In AdfsecurityFilter password: " + req.getParameter("password"));
+                if (logger.isDebugEnabled())
+                {
+                    logger.debug("In AdfsecurityFilter: " + req.getPathInfo() + " (" + ran  + ")");
+                    logger.debug("In AdfsecurityFilter password: " + req.getParameter("password") + " (" + ran  + ")");
+                }
+
 
                 String bodyString = new String(requestWrapper.getStoredBody());
-                System.out.println("****************  In AdfsecurityFilter BODY: " + bodyString);
+                
+                if(logger.isDebugEnabled())
+                {
+                    logger.debug("In AdfsecurityFilter BODY: " + bodyString);
+                }
 
                 ObjectMapper mapper = new ObjectMapper();
                 JsonNode theJsonBody = mapper.readTree(bodyString);
-                System.out.println("********The Claimed user is: " + theJsonBody.get("userId").toString());
-                System.out.println("********The JWT token is: " + theJsonBody.get("password"));
-
+                
+                if(logger.isDebugEnabled())
+                {
+                    logger.debug("The Claimed user is: " + theJsonBody.get("userId").toString());
+                    logger.debug("The JWT token is: " + theJsonBody.get("password"));
+                }
                 // Do here the JWT checking/verification
                 // if All OK then
                 requestWrapper.addHeader("X-Alfresco-Remote-User", theJsonBody.get("userId").toString());
 
                 HttpServletResponse responseOK = (HttpServletResponse) response;
 
-                // responseOK.setStatus(200);
-
-                // responseOK.sendError(200);
-                // responseOK.setCode(200);
-
                 PrintWriter out = response.getWriter();
                 response.setContentType("application/json");
                 response.setCharacterEncoding("UTF-8");
-                // Assuming your json object is **jsonObject**, perform the following, it will
-                // return your json object
+                
+                //confirming here that all is OK
                 out.print("{\"entry\":{\"id\":\"TICKET_tagada\",\"userId\":\"admin@app.activiti.com\"}}");
                 out.flush();
+                
+                logger.info("Exit doFilter (" + ran  + ")");
 
-                // When getting ticket body is a json similar to:
-                //
-                // parse the JSON in bodyString and position the header with user it claims to
-                // be.
-
-                // http://localhost:8082/alfresco/api/-default-/public/authentication/versions/1/tickets
-                // chain.doFilter(requestWrapper, response); // Goal to default servlet.
             } else
             {
                 // we do not need to peek the body here
                 // just need to to be able to add the "X-Alfresco-Remote-User" for Alfresco
                 HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req, false);
-                //verify jwt token here
+                //verify JWT token here
                 // if All OK then
                 requestWrapper.addHeader("X-Alfresco-Remote-User", "admin@app.activiti.com");
                 chain.doFilter(requestWrapper, response); // Goes to default servlet.
+                logger.info("Exit doFilter "  + " (" + ran  + ")");
             }
         } else
         {
             chain.doFilter(request, response); // Goes to default servlet.
+            logger.info("Exit doFilter"  + " (" + ran  + ")");
         }
     }
 
