@@ -2,5 +2,6 @@ proxy:
     alfresco:
         servlet_url: /*
         target_url: http://localhost:8082
+        secret: "This is secret"
 server:
     port: 9092
