@@ -37,6 +37,7 @@ public class AlfrescoProxyServletConfiguration implements EnvironmentAware {
         registrationBean.setFilter(new AdfsecurityFilter());
         registrationBean.addUrlPatterns("/alfresco/*");
         registrationBean.addInitParameter("secret", propertyResolver.getProperty("secret"));
+        registrationBean.addInitParameter("passthrough", propertyResolver.getProperty("passthrough"));
              
         return registrationBean;    
     }

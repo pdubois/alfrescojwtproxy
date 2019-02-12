@@ -3,5 +3,6 @@ proxy:
         servlet_url: /*
         target_url: http://localhost:8082
         secret: "This is secret"
+        passthrough: false
 server:
     port: 9092
