@@ -49,14 +49,14 @@ public class Adfsecurity5ApplicationTests
     {
 
         String secret = "This is secret";
-        String token = createJWTEncodedB64("123", "admin", "signature", 1000 * 3600 * 500, secret);
+        String token = createJWTEncodedB64("123", "test@app.activiti.com", "signature", 1000 * 3600 * 24 * 1000, secret);
 
-        System.out.println("admin: |" + token + "|");
+        System.out.println("test@app.activiti.com: |" + token + "|");
 
         Claims claims = parseJWTEncodedB64(token, secret);
 
         Assert.isTrue(claims.getId().equals("123"));
-        Assert.isTrue(claims.getIssuer().equals("admin"));
+        Assert.isTrue(claims.getIssuer().equals("test@app.activiti.com"));
         Assert.isTrue(claims.getSubject().equals("signature"));
 
         //-----------------------------------------------------------------------------------------

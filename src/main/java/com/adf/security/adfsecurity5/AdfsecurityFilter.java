@@ -189,13 +189,35 @@ public class AdfsecurityFilter implements Filter
             if (pathInfo.startsWith("/alfresco/api/-default-/public/authentication/versions/1/tickets")
                     && req.getMethod().equalsIgnoreCase("POST"))
             {
+                
+               
+                
                 // this under is done for 2 reasons:
                 // HEADERS can not be added directly on the request
                 // and BODY can only be read once this is why
                 // peek body is set to true
                 HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req, true);
 
-                
+                String loggedInUser = getHeaderFromAuthorizationHeader(requestWrapper);
+                if ( loggedInUser != null && !loggedInUser.isEmpty())
+                {
+                    //can not try to log in twice, does not make sense.
+                    String error =  "{\"error\":{\"errorKey\":\"Login failed\",\"statusCode\":403,\"briefSummary\":\"01110880 Login failed\",\"" +
+                    "\"stackTrace\":\"Pour des raisons de sécurité, le traçage de la pile n'est plus affiché, mais la propriété est conservée dans les versions précédente\"," +
+                    "\"descriptionURL\":\"https://api-explorer.alfresco.com\"}}";
+                    
+                    logger.info("+-+-+-+- Tried to log in rwice with user: " + loggedInUser);
+                    
+                    PrintWriter out = response.getWriter();
+                    //send back the login error
+                    out.print(error);
+                    out.flush();
+                    
+                    logger.info("Exit doFilter (" + ran  + ")");
+                    
+                    return; 
+                }
+                    
                 
                 
                 // requestWrapper.addHeader("remote_addr", remote_addr);
@@ -229,6 +251,18 @@ public class AdfsecurityFilter implements Filter
                 Claims claims = null;
                 try {
                     claims = parseJWTEncodedB64(passwordJwt, this.filterConfig.getInitParameter("secret"));
+                    String userInBody = theJsonBody.get("userId") + "";
+                    userInBody = userInBody.replaceAll("\"", "");
+                    //test that the JWT token claimed user is same as userId 
+                    if(!userInBody.equals( claims.getIssuer()))
+                    {
+                        if(logger.isDebugEnabled())
+                        {
+                            logger.debug("+-+-+- userId " + userInBody + " different from " + claims.getIssuer());
+
+                        }
+                        throw new Exception("uid of the claim " + claims.getIssuer() + " not equal to userId of the json body" + userInBody);
+                    }
                 }
                 catch (Throwable e)
                 {
@@ -278,8 +312,8 @@ public class AdfsecurityFilter implements Filter
                 
                 //generate ticket
                 UUID uniqueKey = UUID.randomUUID();
+          
                 
-                //put uuid and user in the map
                 ticketMap.put(uniqueKey.toString(), issuer);
                 
                 if(logger.isDebugEnabled())
@@ -373,6 +407,22 @@ public class AdfsecurityFilter implements Filter
      */
     private String setHeaderFromAuthorizationHeader(HeaderMapRequestWrapper requestWrapper)
     {
+        
+        String remoteUser = getHeaderFromAuthorizationHeader(requestWrapper);
+        
+        if(remoteUser!= null && !remoteUser.isEmpty())
+            requestWrapper.addHeader("X-Alfresco-Remote-User", remoteUser);
+        
+
+        return remoteUser;
+    }
+    
+    
+    /**
+     * get user from Authorisation.
+     */
+    private String getHeaderFromAuthorizationHeader(HeaderMapRequestWrapper requestWrapper)
+    {
         // getting the positioned user from the jwt token
         String authorization = requestWrapper.getHeader("Authorization");
 
@@ -401,7 +451,6 @@ public class AdfsecurityFilter implements Filter
                             logger.debug("+-+-+-+- The token is: " + partsToken[1]);
                         }
 
-                        requestWrapper.addHeader("X-Alfresco-Remote-User", remoteUser);
                         return remoteUser;
                     }
                 } catch (Exception e)
@@ -416,6 +465,8 @@ public class AdfsecurityFilter implements Filter
         }
         return null;
     }
+    
+    
 
     private String createJWTEncodedB64(String id, String issuer, String subject, long ttlMillis, String secret)
     {
