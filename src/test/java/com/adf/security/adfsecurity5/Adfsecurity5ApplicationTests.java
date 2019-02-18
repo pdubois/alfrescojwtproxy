@@ -1,19 +1,35 @@
 package com.adf.security.adfsecurity5;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.io.IOException;
 import java.security.Key;
 import java.util.Base64;
 import java.util.Date;
 
 import javax.crypto.spec.SecretKeySpec;
+import javax.servlet.FilterChain;
+import javax.servlet.FilterConfig;
+import javax.servlet.ServletException;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
 import javax.xml.bind.DatatypeConverter;
 
+import org.apache.http.HttpStatus;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.bind.RelaxedPropertyResolver;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.env.Environment;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockFilterConfig;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.junit4.SpringRunner;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtBuilder;
@@ -27,6 +43,8 @@ public class Adfsecurity5ApplicationTests
 {
 
     @Autowired Environment environment;
+    
+    
     
     private RelaxedPropertyResolver propertyResolver;
     
@@ -116,6 +134,49 @@ public class Adfsecurity5ApplicationTests
         return builder.compact();
     }
 
+    @Test
+    public void testJWTFilter() throws Exception {
+        //UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+        //    "test-user",
+        //    "test-password",
+        //    Collections.singletonList(new SimpleGrantedAuthority(AuthoritiesConstants.USER))
+        //);
+        propertyResolver = new RelaxedPropertyResolver(environment, "proxy.alfresco.");
+        String secret = propertyResolver.getProperty("secret");
+        String jwt = createJWTEncodedB64("123", "admin@app.activiti.com", "signature", 1000 * 3600 * 500, secret);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        //request.addHeader(JWTConfigurer.AUTHORIZATION_HEADER, "Bearer " + jwt);
+        request.setRequestURI("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setPathInfo("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setMethod("POST");
+        String requestPayload = "{\"userId\": \"admin@app.activiti.com\", \"password\": \"" + jwt + "\"}";
+        
+        request.setContent(requestPayload.getBytes());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain filterChain = new MockFilterChain();
+        AdfsecurityFilter jwtFilter = new AdfsecurityFilter();
+        
+        MockFilterConfig filterConfig = new MockFilterConfig();
+        
+        //filterConfig.addInitParameter(name, value);
+        //filterConfig.addUrlPatterns("/alfresco/*");
+        filterConfig.addInitParameter("secret", propertyResolver.getProperty("secret"));
+        filterConfig.addInitParameter("passthrough", propertyResolver.getProperty("passthrough"));
+        
+        jwtFilter.init(filterConfig);
+        jwtFilter.doFilter(request, response, filterChain);
+        assertThat(response.getStatus()).isEqualTo(200);
+        //test that answer is correct
+        String resBody = new String(response.getContentAsByteArray());
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode theJsonBody = mapper.readTree(resBody);
+        //out.print("{\"entry\":{\"id\":\"" + uniqueKey + "\",\"userId\":\"" + issuer + "\"}}");
+        String issuer = theJsonBody.get("entry").get("issuer") + "";
+        assertThat(issuer.equals("admin@app.activiti.com"));
+        //assertThat(SecurityContextHolder.getContext().getAuthentication().getCredentials().toString()).isEqualTo(jwt);
+    }
+    
+    
     // Sample method to validate and read the JWT encoded in base 64
     private Claims parseJWTEncodedB64(String jwtBase64, String secret)
     {

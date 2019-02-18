@@ -35,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.DelegatingServletInputStream;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -264,7 +265,7 @@ public class AdfsecurityFilter implements Filter
                         throw new Exception("uid of the claim " + claims.getIssuer() + " not equal to userId of the json body" + userInBody);
                     }
                 }
-                catch (Throwable e)
+                catch (Throwable   e)
                 {
                     logger.info("jwt token can not be trusted because: ", e);
                     // return an error unauthorized
@@ -282,6 +283,7 @@ public class AdfsecurityFilter implements Filter
                     
                     return; 
                 }
+
                 
                 
                 if(logger.isDebugEnabled())
