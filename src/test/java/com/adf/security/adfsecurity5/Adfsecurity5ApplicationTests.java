@@ -9,7 +9,10 @@ import javax.xml.bind.DatatypeConverter;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.bind.RelaxedPropertyResolver;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.env.Environment;
 import org.springframework.test.context.junit4.SpringRunner;
 
 import io.jsonwebtoken.Claims;
@@ -23,6 +26,10 @@ import io.jsonwebtoken.lang.Assert;
 public class Adfsecurity5ApplicationTests
 {
 
+    @Autowired Environment environment;
+    
+    private RelaxedPropertyResolver propertyResolver;
+    
     @Test
     public void contextLoads()
     {
@@ -31,8 +38,8 @@ public class Adfsecurity5ApplicationTests
     @Test
     public void createDecodeToken()
     {
-
-        String secret = "This is secret";
+        propertyResolver = new RelaxedPropertyResolver(environment, "proxy.alfresco.");
+        String secret = propertyResolver.getProperty("secret");
         String token = createJWT("123", "admin@app.activiti.com", "signature", 1000 * 3600, secret);
 
         // System.out.println("|" + token + "|");
@@ -47,8 +54,8 @@ public class Adfsecurity5ApplicationTests
     @Test
     public void createDecodeTokenBase64()
     {
-
-        String secret = "This is secret";
+        propertyResolver = new RelaxedPropertyResolver(environment, "proxy.alfresco.");
+        String secret = propertyResolver.getProperty("secret");
         String token = createJWTEncodedB64("123", "test@app.activiti.com", "signature", 1000 * 3600 * 24 * 1000, secret);
 
         System.out.println("test@app.activiti.com: |" + token + "|");
@@ -75,7 +82,7 @@ public class Adfsecurity5ApplicationTests
     {
         // Encode data on your side using BASE64
         byte[] bytesEncoded = Base64.getEncoder().encode(createJWT(id, issuer, subject, ttlMillis, secret).getBytes());
-        return new String(bytesEncoded);
+        return new String(bytesEncoded).replaceAll("=+$", "");
 
     }
 

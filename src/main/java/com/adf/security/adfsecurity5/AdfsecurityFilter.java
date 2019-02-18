@@ -141,7 +141,7 @@ public class AdfsecurityFilter implements Filter
                     headerSet = setHeaderFromAlfTicket(requestWrapper);
                 }
                 
-                String remoteUser = null;
+                
                 String alfTicket = null;
                 if (headerSet != null && !headerSet.isEmpty())
                 {
@@ -301,7 +301,6 @@ public class AdfsecurityFilter implements Filter
                 requestWrapper.addHeader("content-type","application/json;charset=UTF-8");
                 requestWrapper.addHeader("pragma","no-cache");
                 
-                HttpServletResponse responseOK = (HttpServletResponse) response;
 
                 PrintWriter out = response.getWriter();
                 response.setContentType("application/json");
@@ -468,6 +467,7 @@ public class AdfsecurityFilter implements Filter
     
     
 
+    @SuppressWarnings("unused")
     private String createJWTEncodedB64(String id, String issuer, String subject, long ttlMillis, String secret)
     {
         // Encode data on your side using BASE64
