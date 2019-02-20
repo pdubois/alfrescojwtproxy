@@ -228,7 +228,7 @@ public class Adfsecurity5ApplicationTests
         filterChain = new MockFilterChain();
         jwtFilter.doFilter(request, response, filterChain);
         //header positionned
-        assertThat(response.getStatus()).isEqualTo(201);
+        assertThat(response.getStatus()).isEqualTo(200);
         
         
     }
