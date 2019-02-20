@@ -355,6 +355,7 @@ public class AdfsecurityFilter implements Filter
                 {
                     //unauthorized
                     logger.info("+-+-+-+-+-+-+ unauthorized returned because Authorization or ALF_TICKET not present or not valid");
+                    ((HttpServletResponse) response).sendError(403);
                     // return an error unauthorized
                     String error =  "{\"error\":{\"errorKey\":\"Login failed\",\"statusCode\":403,\"briefSummary\":\"01110880 Login failed\",\"" +
                     "\"stackTrace\":\"Pour des raisons de sécurité, le traçage de la pile n'est plus affiché, mais la propriété est conservée dans les versions précédente\"," +

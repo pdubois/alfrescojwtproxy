@@ -136,11 +136,7 @@ public class Adfsecurity5ApplicationTests
 
     @Test
     public void testJWTFilter() throws Exception {
-        //UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-        //    "test-user",
-        //    "test-password",
-        //    Collections.singletonList(new SimpleGrantedAuthority(AuthoritiesConstants.USER))
-        //);
+       
         propertyResolver = new RelaxedPropertyResolver(environment, "proxy.alfresco.");
         String secret = propertyResolver.getProperty("secret");
         String jwt = createJWTEncodedB64("123", "admin@app.activiti.com", "signature", 1000 * 3600 * 500, secret);
@@ -158,8 +154,6 @@ public class Adfsecurity5ApplicationTests
         
         MockFilterConfig filterConfig = new MockFilterConfig();
         
-        //filterConfig.addInitParameter(name, value);
-        //filterConfig.addUrlPatterns("/alfresco/*");
         filterConfig.addInitParameter("secret", propertyResolver.getProperty("secret"));
         filterConfig.addInitParameter("passthrough", propertyResolver.getProperty("passthrough"));
         
@@ -171,9 +165,72 @@ public class Adfsecurity5ApplicationTests
         ObjectMapper mapper = new ObjectMapper();
         JsonNode theJsonBody = mapper.readTree(resBody);
         //out.print("{\"entry\":{\"id\":\"" + uniqueKey + "\",\"userId\":\"" + issuer + "\"}}");
-        String issuer = theJsonBody.get("entry").get("issuer") + "";
+        String issuer = theJsonBody.get("entry").get("userId") + "";
+        String authorisation = theJsonBody.get("entry").get("id") + "";
+        //remove quotes from authorization
+        authorisation = authorisation.replaceAll("\"", "");
         assertThat(issuer.equals("admin@app.activiti.com"));
-        //assertThat(SecurityContextHolder.getContext().getAuthentication().getCredentials().toString()).isEqualTo(jwt);
+        
+        //----------------------------------------------
+        //check that can not access when not logged in
+        response = new MockHttpServletResponse();
+        response.setStatus(200);
+        
+        request = new MockHttpServletRequest();
+        
+        request.setRequestURI("/alfresco/api/-default-/public/test");
+        request.setPathInfo("/alfresco/api/-default-/public/test");
+        request.setMethod("GET");
+        
+        jwtFilter.doFilter(request, response, filterChain);
+        //no header positionned
+        assertThat(response.getStatus()).isEqualTo(403);
+        
+        //---------------------------------------------------
+        //position a Authorization header test that authorized
+        response = new MockHttpServletResponse();
+        response.setStatus(200);
+        
+        request = new MockHttpServletRequest();
+        
+        request.setRequestURI("/alfresco/api/-default-/public/test");
+        request.setPathInfo("/alfresco/api/-default-/public/test");
+        request.setMethod("GET");
+        
+        byte[] authorizationByteEncoded = Base64.getEncoder().encode(("id:" + authorisation).getBytes());
+        String encodedTicket = new String(authorizationByteEncoded);
+        request.addHeader("Authorization", "Basic " +encodedTicket);
+        
+        jwtFilter.doFilter(request, response, filterChain);
+        //header positionned
+        assertThat(response.getStatus()).isEqualTo(200);
+        
+        //---------------------------------------------------------------
+        // test that authorization is given if using alf_ticket
+        // as authorization bearer
+        request = new MockHttpServletRequest();
+        
+        request.setRequestURI("/alfresco/api/-default-/public/test");
+        request.setPathInfo("/alfresco/api/-default-/public/test");
+        request.setMethod("GET");
+        request.addParameter("alf_ticket", authorisation);
+        
+        response.setStatus(200);
+        
+        jwtFilter = new AdfsecurityFilter();
+        
+        filterConfig = new MockFilterConfig();
+        
+        filterConfig.addInitParameter("secret", propertyResolver.getProperty("secret"));
+        filterConfig.addInitParameter("passthrough", propertyResolver.getProperty("passthrough"));
+        
+        jwtFilter.init(filterConfig);
+        filterChain = new MockFilterChain();
+        jwtFilter.doFilter(request, response, filterChain);
+        //header positionned
+        assertThat(response.getStatus()).isEqualTo(200);
+        
+        
     }
     
     
