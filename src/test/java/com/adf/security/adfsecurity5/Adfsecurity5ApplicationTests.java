@@ -16,6 +16,7 @@ import javax.servlet.ServletResponse;
 import javax.xml.bind.DatatypeConverter;
 
 import org.apache.http.HttpStatus;
+import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,13 +45,17 @@ public class Adfsecurity5ApplicationTests
 
     @Autowired Environment environment;
     
-    
-    
+    //property resolver with proxy.alfresco root
     private RelaxedPropertyResolver propertyResolver;
+    private String secret;
+    //jwt Base64 encoded
+    private String jwt;
     
-    @Test
-    public void contextLoads()
-    {
+    @Before
+    public void setUp() {
+        propertyResolver = new RelaxedPropertyResolver(environment, "proxy.alfresco.");
+        secret = propertyResolver.getProperty("secret");
+        jwt = createJWTEncodedB64("123", "admin@app.activiti.com", "signature", 1000 * 3600 * 500, secret);
     }
 
     @Test
@@ -133,13 +138,15 @@ public class Adfsecurity5ApplicationTests
         // Builds the JWT and serializes it to a compact, URL-safe string
         return builder.compact();
     }
-
+    
+    /**
+     * Test login, request after log in, test with credential in AUTHORITY header
+     * test using alf_ticket
+     * @throws Exception
+     */
     @Test
     public void testJWTFilter() throws Exception {
        
-        propertyResolver = new RelaxedPropertyResolver(environment, "proxy.alfresco.");
-        String secret = propertyResolver.getProperty("secret");
-        String jwt = createJWTEncodedB64("123", "admin@app.activiti.com", "signature", 1000 * 3600 * 500, secret);
         MockHttpServletRequest request = new MockHttpServletRequest();
         //request.addHeader(JWTConfigurer.AUTHORIZATION_HEADER, "Bearer " + jwt);
         request.setRequestURI("/alfresco/api/-default-/public/authentication/versions/1/tickets");
@@ -230,8 +237,141 @@ public class Adfsecurity5ApplicationTests
         //header positionned
         assertThat(response.getStatus()).isEqualTo(200);
         
+ 
         
     }
+    
+    /**
+     * test that we got a 403 forbidden after log out
+     * @throws Exception
+     */
+    @Test
+    public void testLogOut() throws Exception {
+        
+        //------------------------------------------------------
+        // Log in
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        //request.addHeader(JWTConfigurer.AUTHORIZATION_HEADER, "Bearer " + jwt);
+        request.setRequestURI("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setPathInfo("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setMethod("POST");
+        String requestPayload = "{\"userId\": \"admin@app.activiti.com\", \"password\": \"" + jwt + "\"}";
+        
+        request.setContent(requestPayload.getBytes());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain filterChain = new MockFilterChain();
+        AdfsecurityFilter jwtFilter = new AdfsecurityFilter();
+        
+        MockFilterConfig filterConfig = new MockFilterConfig();
+        
+        filterConfig.addInitParameter("secret", propertyResolver.getProperty("secret"));
+        filterConfig.addInitParameter("passthrough", propertyResolver.getProperty("passthrough"));
+        
+        jwtFilter.init(filterConfig);
+        jwtFilter.doFilter(request, response, filterChain);
+        assertThat(response.getStatus()).isEqualTo(200);
+        //test that answer is correct
+        String resBody = new String(response.getContentAsByteArray());
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode theJsonBody = mapper.readTree(resBody);
+        //out.print("{\"entry\":{\"id\":\"" + uniqueKey + "\",\"userId\":\"" + issuer + "\"}}");
+        String issuer = theJsonBody.get("entry").get("userId") + "";
+        String authorisation = theJsonBody.get("entry").get("id") + "";
+        //remove quotes from authorization
+        authorisation = authorisation.replaceAll("\"", "");
+        assertThat(issuer.equals("admin@app.activiti.com"));
+        
+        //------------------------------------------
+        //test that we can access after log in
+        //position a Authorization header test that authorized
+        response = new MockHttpServletResponse();
+        response.setStatus(200);
+        
+        request = new MockHttpServletRequest();
+        
+        request.setRequestURI("/alfresco/api/-default-/public/test");
+        request.setPathInfo("/alfresco/api/-default-/public/test");
+        request.setMethod("GET");
+        
+        byte[] authorizationByteEncoded = Base64.getEncoder().encode(("id:" + authorisation).getBytes());
+        String encodedTicket = new String(authorizationByteEncoded);
+        request.addHeader("Authorization", "Basic " +encodedTicket);
+        
+        jwtFilter.doFilter(request, response, filterChain);
+        //header positionned
+        assertThat(response.getStatus()).isEqualTo(200);
+        
+        //---------------------------------------------
+        // send a log out
+        request = new MockHttpServletRequest();
+        
+        request.setRequestURI("/alfresco/api/-default-/public/authentication/versions/1/tickets/-me-");
+        request.setPathInfo("/alfresco/api/-default-/public/authentication/versions/1/tickets/-me-");
+        request.setMethod("DELETE");
+        request.addHeader("Authorization", "Basic " +encodedTicket);
+        
+        response.setStatus(200);
+        
+        jwtFilter = new AdfsecurityFilter();
+        
+        filterConfig = new MockFilterConfig();
+        
+        filterConfig.addInitParameter("secret", propertyResolver.getProperty("secret"));
+        filterConfig.addInitParameter("passthrough", propertyResolver.getProperty("passthrough"));
+        
+        jwtFilter.init(filterConfig);
+        filterChain = new MockFilterChain();
+        jwtFilter.doFilter(request, response, filterChain);
+        //header positionned
+        //status no content
+        assertThat(response.getStatus()).isEqualTo(204);
+        
+
+        //----------------------------------------------
+        //try to access expect to get a 403 forbidden
+        //check that can not access when not logged in
+        response = new MockHttpServletResponse();
+        response.setStatus(200);
+        
+        request = new MockHttpServletRequest();
+        
+        request.setRequestURI("/alfresco/api/-default-/public/test");
+        request.setPathInfo("/alfresco/api/-default-/public/test");
+        request.setMethod("GET");
+        request.addHeader("Authorization", "Basic " +encodedTicket);
+        filterChain = new MockFilterChain();
+        jwtFilter.doFilter(request, response, filterChain);
+        //no header positioned
+        assertThat(response.getStatus()).isEqualTo(403);
+        
+        //-----------------------------------------------------
+        //also test can not access using alf_ticket
+        // test that authorization is given if using alf_ticket
+        // as authorization bearer
+        request = new MockHttpServletRequest();
+        
+        request.setRequestURI("/alfresco/api/-default-/public/test");
+        request.setPathInfo("/alfresco/api/-default-/public/test");
+        request.setMethod("GET");
+        request.addParameter("alf_ticket", authorisation);
+        
+        response = new MockHttpServletResponse();
+        response.setStatus(200);
+        
+        jwtFilter = new AdfsecurityFilter();
+        
+        filterConfig = new MockFilterConfig();
+        
+        filterConfig.addInitParameter("secret", propertyResolver.getProperty("secret"));
+        filterConfig.addInitParameter("passthrough", propertyResolver.getProperty("passthrough"));
+        
+        jwtFilter.init(filterConfig);
+        filterChain = new MockFilterChain();
+        jwtFilter.doFilter(request, response, filterChain);
+        assertThat(response.getStatus()).isEqualTo(403);
+        
+    }
+    
     
     
     // Sample method to validate and read the JWT encoded in base 64

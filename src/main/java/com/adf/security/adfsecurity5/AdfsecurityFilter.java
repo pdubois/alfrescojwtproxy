@@ -177,6 +177,7 @@ public class AdfsecurityFilter implements Filter
                     if(alfTicket != null)
                         ticketMap.compute(alfTicket, (s, o) -> null);
 
+                // status no content    
                 responseOK.setStatus(204);
                 
                 return;
