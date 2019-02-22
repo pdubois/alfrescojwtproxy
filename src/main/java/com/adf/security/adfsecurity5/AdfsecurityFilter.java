@@ -12,6 +12,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
 import java.util.Vector;
@@ -222,7 +223,7 @@ public class AdfsecurityFilter implements Filter
                     
                 
                 
-                // requestWrapper.addHeader("remote_addr", remote_addr);
+                
                 if (logger.isDebugEnabled())
                 {
                     logger.debug("In AdfsecurityFilter: " + req.getPathInfo() + " (" + ran  + ")");
@@ -339,6 +340,7 @@ public class AdfsecurityFilter implements Filter
                 
                 //getting the positioned user from the jwt token 
                 //and position it in the header request
+                
                 String headerSet = setHeaderFromAuthorizationHeader(requestWrapper);
                 
                 if(headerSet == null || headerSet.isEmpty())
@@ -379,30 +381,21 @@ public class AdfsecurityFilter implements Filter
         }
     }
 
+    private String SetRemoteUser(String user, HeaderMapRequestWrapper requestWrapper)
+    {
+        requestWrapper.addHeader("X-Alfresco-Remote-User", user);
+        return user;
+    }
+    
+    
     /**
      * Set header from Authorisation.
      */
     private String setHeaderFromAlfTicket(HeaderMapRequestWrapper requestWrapper)
     {
-        // try to position from alf_ticket
-        Map<Object, String[]> params = Collections.list(requestWrapper.getParameterNames()).stream()
-                .collect(Collectors.toMap(parameterName -> parameterName, requestWrapper::getParameterValues));
-
-        if (params.get("alf_ticket") != null)
-        {
-
-            if (logger.isDebugEnabled())
-                logger.debug("++++++ Positionning from alf_ticket: "
-                        + (params.get("alf_ticket") != null ? params.get("alf_ticket")[0] : "null"));
-
-            // looking for remote user
-            String remoteUser = ticketMap.get(params.get("alf_ticket")[0]);
-
-            requestWrapper.addHeader("X-Alfresco-Remote-User", remoteUser);
-            return remoteUser;
-        }
-
-        return null;
+        Optional<String> ticket = Optional.ofNullable(requestWrapper.getParameter("alf_ticket"));
+        
+        return ticket.isPresent()? SetRemoteUser((String)ticketMap.get(ticket.get()), requestWrapper) : null;   
     }
 
     /**
