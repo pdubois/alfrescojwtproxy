@@ -32,11 +32,12 @@ import javax.servlet.http.HttpServletRequestWrapper;
 import javax.servlet.http.HttpServletResponse;
 import javax.xml.bind.DatatypeConverter;
 
+import org.junit.Assert;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.DelegatingServletInputStream;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -68,6 +69,84 @@ public class AdfsecurityFilter implements Filter
     {
 
     }
+    
+    /**
+     * Manages the logout request
+     * @param req
+     * @param response
+     * @param chain
+     */
+    private void manageLogout(HttpServletRequest req , ServletResponse response, FilterChain chain)
+    {
+        //try to logout
+        HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req, false);
+        HttpServletResponse responseOK = (HttpServletResponse) response;
+        
+        //trying yo dry ticket from header or alf_ticket
+        String headerSet = Optional.ofNullable(setHeaderFromAuthorizationHeader(requestWrapper)).
+                orElse(setHeaderFromAlfTicket(requestWrapper));
+                
+        String alfTicket = null;
+        if (headerSet != null && !headerSet.isEmpty())
+        {
+            String authorization = requestWrapper.getHeader("Authorization");
+            
+            if (authorization != null && !authorization.isEmpty())
+            {
+                //get second part of it, skip Basic<space>
+                String parts [] = authorization.split(" ");
+                if (parts != null && parts.length > 1)
+                {
+                    //decode the base 64 because it is encoded twice in base 64
+                    byte[] decodedBytes = Base64.getDecoder().decode(parts[1]);
+                    String jwtStill = new String(decodedBytes);
+                    
+                        
+                       String partsToken [] = jwtStill.split(":");
+                       if(partsToken != null && partsToken.length >1 )
+                       {
+                           
+                           //try to find the ticket in the map
+                           alfTicket = partsToken[1];
+                           
+
+                       }
+                    }
+
+                }
+            }
+
+            //looking for remote user and delete it
+            if(alfTicket != null)
+                ticketMap.compute(alfTicket, (s, o) -> null);
+
+        // status no content    
+        responseOK.setStatus(204);
+        
+        return;
+    }
+    
+    protected void returnUnauthorized(ServletResponse response) throws IOException, ServletException
+    {
+        //unauthorized
+        logger.info("+-+-+-+-+-+-+ unauthorized returned because Authorization or ALF_TICKET not present or not valid");
+        ((HttpServletResponse) response).sendError(403);
+        // return an error unauthorized
+        String error =  "{\"error\":{\"errorKey\":\"Login failed\",\"statusCode\":403,\"briefSummary\":\"01110880 Login failed\",\"" +
+        "\"stackTrace\":\"Pour des raisons de sécurité, le traçage de la pile n'est plus affiché, mais la propriété est conservée dans les versions précédente\"," +
+        "\"descriptionURL\":\"https://api-explorer.alfresco.com\"}}";
+                            
+        PrintWriter out = response.getWriter();
+        //send back the login error
+        out.print(error);
+        out.flush();
+        
+        //@TOTDO define ran as localThread
+        //logger.info("Exit doFilter (" + ran  + ")");
+        
+        return; 
+    }
+    
 
     /**
      * This manages 
@@ -91,7 +170,9 @@ public class AdfsecurityFilter implements Filter
     {
         int ran = random.get().nextInt(100000);
         logger.info("Entering doFilter (" + ran  + ")");
-        
+     
+        Assert.assertTrue(request!=null && response != null && chain!= null);
+
         String passthrough = this.filterConfig.getInitParameter("passthrough");
         
         if (passthrough.equals("true"))
@@ -123,66 +204,14 @@ public class AdfsecurityFilter implements Filter
                 logger.debug("--------alf_ticket: " + (params.get("alf_ticket")!= null ? params.get("alf_ticket")[0]: "null"));
             }
             
-            
             String pathInfo = req.getPathInfo();
-            
             // /alfresco/api/-default-/public/authentication/versions/1/tickets/-me-
             if (pathInfo.startsWith("/alfresco/api/-default-/public/authentication/versions/1/tickets/-me-")
                     && req.getMethod().equalsIgnoreCase("DELETE"))
             {
-                //try to logout
-                HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req, false);
-                HttpServletResponse responseOK = (HttpServletResponse) response;
-                //getting the positioned user from the jwt token 
-                //and position it in the header request
-                String headerSet = setHeaderFromAuthorizationHeader(requestWrapper);
-                
-                if(headerSet == null || headerSet.isEmpty())
-                {
-                    //try to configure header from ALF_TICKET
-                    headerSet = setHeaderFromAlfTicket(requestWrapper);
-                }
-                
-                
-                String alfTicket = null;
-                if (headerSet != null && !headerSet.isEmpty())
-                {
-                    String authorization = requestWrapper.getHeader("Authorization");
-                    
-                    if (authorization != null && !authorization.isEmpty())
-                    {
-                        //get second part of it, skip Basic<space>
-                        String parts [] = authorization.split(" ");
-                        if (parts != null && parts.length > 1)
-                        {
-                            //decode the base 64 because it is encoded twice in base 64
-                            byte[] decodedBytes = Base64.getDecoder().decode(parts[1]);
-                            String jwtStill = new String(decodedBytes);
-                            
-                                
-                               String partsToken [] = jwtStill.split(":");
-                               if(partsToken != null && partsToken.length >1 )
-                               {
-                                   
-                                   //try to find the ticket in the map
-                                   alfTicket = partsToken[1];
-                                   
-
-                               }
-                            }
-
-                        }
-                    }
-
-                    //looking for remote user and delete it
-                    if(alfTicket != null)
-                        ticketMap.compute(alfTicket, (s, o) -> null);
-
-                // status no content    
-                responseOK.setStatus(204);
-                
+                //this is a logout request
+                manageLogout(req , response, chain);
                 return;
-                
             }
             
             
@@ -204,25 +233,12 @@ public class AdfsecurityFilter implements Filter
                 String loggedInUser = getHeaderFromAuthorizationHeader(requestWrapper);
                 if ( loggedInUser != null && !loggedInUser.isEmpty())
                 {
-                    //can not try to log in twice, does not make sense.
-                    String error =  "{\"error\":{\"errorKey\":\"Login failed\",\"statusCode\":403,\"briefSummary\":\"01110880 Login failed\",\"" +
-                    "\"stackTrace\":\"Pour des raisons de sécurité, le traçage de la pile n'est plus affiché, mais la propriété est conservée dans les versions précédente\"," +
-                    "\"descriptionURL\":\"https://api-explorer.alfresco.com\"}}";
-                    
-                    logger.info("+-+-+-+- Tried to log in rwice with user: " + loggedInUser);
-                    
-                    PrintWriter out = response.getWriter();
-                    //send back the login error
-                    out.print(error);
-                    out.flush();
-                    
+                    returnUnauthorized( response);                    
                     logger.info("Exit doFilter (" + ran  + ")");
                     
                     return; 
                 }
                     
-                
-                
                 
                 if (logger.isDebugEnabled())
                 {
@@ -269,18 +285,9 @@ public class AdfsecurityFilter implements Filter
                 }
                 catch (Throwable   e)
                 {
-                    logger.info("jwt token can not be trusted because: ", e);
-                    // return an error unauthorized
-                    String error =  "{\"error\":{\"errorKey\":\"Login failed\",\"statusCode\":403,\"briefSummary\":\"01110880 Login failed\",\"" +
-                    "\"stackTrace\":\"Pour des raisons de sécurité, le traçage de la pile n'est plus affiché, mais la propriété est conservée dans les versions précédente\"," +
-                    "\"descriptionURL\":\"https://api-explorer.alfresco.com\"}}";
                     
-                    
-                    PrintWriter out = response.getWriter();
-                    //send back the login error
-                    out.print(error);
-                    out.flush();
-                    
+                    returnUnauthorized( response);
+                    logger.info("jwt token can not be trusted because: ", e);                    
                     logger.info("Exit doFilter (" + ran  + ")");
                     
                     return; 
@@ -341,34 +348,22 @@ public class AdfsecurityFilter implements Filter
                 //getting the positioned user from the jwt token 
                 //and position it in the header request
                 
-                String headerSet = setHeaderFromAuthorizationHeader(requestWrapper);
+                //getting the header
+                String headerSet = Optional.ofNullable(setHeaderFromAuthorizationHeader(requestWrapper)).
+                        orElse(setHeaderFromAlfTicket(requestWrapper));
                 
-                if(headerSet == null || headerSet.isEmpty())
-                {
-                    //try to configure header from ALF_TICKET
-                    headerSet = setHeaderFromAlfTicket(requestWrapper);
-                }
                 
                 if (headerSet != null && !headerSet.isEmpty())
                 {
+                    //found a valid authorisation
                     chain.doFilter(requestWrapper, response); // Goes to default servlet.
                     logger.info("Exit doFilter "  + " (" + ran  + ")");
                 }
                 else
                 {
+                    returnUnauthorized(response);
                     //unauthorized
-                    logger.info("+-+-+-+-+-+-+ unauthorized returned because Authorization or ALF_TICKET not present or not valid");
-                    ((HttpServletResponse) response).sendError(403);
-                    // return an error unauthorized
-                    String error =  "{\"error\":{\"errorKey\":\"Login failed\",\"statusCode\":403,\"briefSummary\":\"01110880 Login failed\",\"" +
-                    "\"stackTrace\":\"Pour des raisons de sécurité, le traçage de la pile n'est plus affiché, mais la propriété est conservée dans les versions précédente\"," +
-                    "\"descriptionURL\":\"https://api-explorer.alfresco.com\"}}";
-                                        
-                    PrintWriter out = response.getWriter();
-                    //send back the login error
-                    out.print(error);
-                    out.flush();
-                    
+                    logger.info("+-+-+-+-+-+-+ unauthorized returned because Authorization or ALF_TICKET not present or not valid");                    
                     logger.info("Exit doFilter (" + ran  + ")");
                     
                     return; 
@@ -400,12 +395,15 @@ public class AdfsecurityFilter implements Filter
 
     /**
      * Set header from Authorisation.
+     * It consist of position the "X-Alfresco-Remote-User" header for Alfresco
+     * pass through
      */
     private String setHeaderFromAuthorizationHeader(HeaderMapRequestWrapper requestWrapper)
     {
         
         String remoteUser = getHeaderFromAuthorizationHeader(requestWrapper);
         
+        //position the header for Alfresco pass through
         if(remoteUser!= null && !remoteUser.isEmpty())
             requestWrapper.addHeader("X-Alfresco-Remote-User", remoteUser);
         
