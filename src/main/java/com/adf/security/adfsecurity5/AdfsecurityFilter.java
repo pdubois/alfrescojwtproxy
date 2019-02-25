@@ -52,6 +52,7 @@ public class AdfsecurityFilter implements Filter
     private FilterConfig filterConfig = null;
 
     private static final Logger logger = LoggerFactory.getLogger(AdfsecurityFilter.class);
+    
 
     private static ThreadLocal<Random> random = new ThreadLocal<Random>()
     {
@@ -141,8 +142,7 @@ public class AdfsecurityFilter implements Filter
         out.print(error);
         out.flush();
         
-        //@TOTDO define ran as localThread
-        //logger.info("Exit doFilter (" + ran  + ")");
+
         
         return; 
     }
@@ -211,6 +211,7 @@ public class AdfsecurityFilter implements Filter
             {
                 //this is a logout request
                 manageLogout(req , response, chain);
+                logger.info("Exit doFilter (" + ran  + ")");
                 return;
             }
             
