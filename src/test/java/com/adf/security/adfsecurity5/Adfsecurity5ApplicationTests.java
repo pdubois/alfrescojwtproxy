@@ -63,7 +63,8 @@ public class Adfsecurity5ApplicationTests
     {
         propertyResolver = new RelaxedPropertyResolver(environment, "proxy.alfresco.");
         String secret = propertyResolver.getProperty("secret");
-        String token = createJWT("123", "admin@app.activiti.com", "signature", 1000 * 3600, secret);
+        AdfsecurityFilter jwtFilter = new AdfsecurityFilter();
+        String token = jwtFilter.createJWT("123", "admin@app.activiti.com", "signature", 1000 * 3600, secret);
 
         // System.out.println("|" + token + "|");
 
@@ -100,12 +101,15 @@ public class Adfsecurity5ApplicationTests
         Assert.isTrue(claims.getIssuer().equals("admin@app.activiti.com"));
         Assert.isTrue(claims.getSubject().equals("signature"));
     }
+    
 
     private String createJWTEncodedB64(String id, String issuer, String subject, long ttlMillis, String secret)
     {
+        AdfsecurityFilter jwtFilter = new AdfsecurityFilter();
+        return jwtFilter.createJWTEncodedB64(id, issuer, subject, ttlMillis, secret);
         // Encode data on your side using BASE64
-        byte[] bytesEncoded = Base64.getEncoder().encode(createJWT(id, issuer, subject, ttlMillis, secret).getBytes());
-        return new String(bytesEncoded).replaceAll("=+$", "");
+//        byte[] bytesEncoded = Base64.getEncoder().encode(createJWT(id, issuer, subject, ttlMillis, secret).getBytes());
+//        return new String(bytesEncoded).replaceAll("=+$", "");
 
     }
 
@@ -139,6 +143,139 @@ public class Adfsecurity5ApplicationTests
         return builder.compact();
     }
     
+    /**
+     * Test in pass thought mode
+     * test using alf_ticket
+     * @throws Exception
+     */
+    @Test
+    public void testPassThrought() throws Exception {
+        MockFilterConfig filterConfig = new MockFilterConfig();
+        
+        filterConfig.addInitParameter("secret", propertyResolver.getProperty("secret"));
+        filterConfig.addInitParameter("passthrough", "true");
+        
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain filterChain = new MockFilterChain();
+        AdfsecurityFilter jwtFilter = new AdfsecurityFilter();
+        
+        jwtFilter.init(filterConfig);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRequestURI("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setPathInfo("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setMethod("GET");
+        jwtFilter.doFilter(request, response, filterChain);
+        assertThat(response.getStatus()).isEqualTo(200);
+    }
+    
+    /**
+     * Test that then when not in passthought mode a ticket can not be obtained
+     * test using alf_ticket
+     * @throws Exception
+     */
+    @Test
+    public void testPassThroughtNoticket() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        //request.addHeader(JWTConfigurer.AUTHORIZATION_HEADER, "Bearer " + jwt);
+        request.setRequestURI("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setPathInfo("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setMethod("POST");
+        String requestPayload = "{\"userId\": \"admin@app.activiti.com\", \"password\": \"" + jwt + "\"}";
+        
+        request.setContent(requestPayload.getBytes());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain filterChain = new MockFilterChain();
+        AdfsecurityFilter jwtFilter = new AdfsecurityFilter();
+        
+        MockFilterConfig filterConfig = new MockFilterConfig();
+        
+        filterConfig.addInitParameter("secret", propertyResolver.getProperty("secret"));
+        filterConfig.addInitParameter("passthrough", propertyResolver.getProperty("passthrough"));
+        
+        jwtFilter.init(filterConfig);
+        jwtFilter.doFilter(request, response, filterChain);
+        assertThat(response.getStatus()).isEqualTo(200);
+        //test that answer is correct
+        String resBody = new String(response.getContentAsByteArray());
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode theJsonBody = mapper.readTree(resBody);
+        //out.print("{\"entry\":{\"id\":\"" + uniqueKey + "\",\"userId\":\"" + issuer + "\"}}");
+        String issuer = theJsonBody.get("entry").get("userId") + "";
+        String authorisation = theJsonBody.get("entry").get("id") + "";
+        //remove quotes from authorization
+        authorisation = authorisation.replaceAll("\"", "");
+        assertThat(issuer.equals("admin@app.activiti.com"));
+        
+ 
+        //---------------------------------------------------
+        //position a Authorization header test that is authorized
+        response = new MockHttpServletResponse();
+        response.setStatus(200);
+        
+        request = new MockHttpServletRequest();
+        
+        request.setRequestURI("/alfresco/api/-default-/public/test");
+        request.setPathInfo("/alfresco/api/-default-/public/test");
+        request.setMethod("GET");
+        
+        byte[] authorizationByteEncoded = Base64.getEncoder().encode(("id:" + authorisation).getBytes());
+        String encodedTicket = new String(authorizationByteEncoded);
+        request.addHeader("Authorization", "Basic " +encodedTicket);
+        
+        jwtFilter.doFilter(request, response, filterChain);
+        //header positionned
+        assertThat(response.getStatus()).isEqualTo(200);
+        
+        //---------------------------------------------------
+        ///alfresco/api/-default-/public/authentication/versions/1/tickets
+        //test that can not get a ticket even if authenticated
+        response = new MockHttpServletResponse();
+        response.setStatus(200);
+        
+        request = new MockHttpServletRequest();
+        
+        request.setRequestURI("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setPathInfo("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setMethod("POST");
+        requestPayload = "{\"userId\": \"admin@app.activiti.com\", \"password\": \"" + jwt + "\"}";
+        
+        request.setContent(requestPayload.getBytes());
+        
+        authorizationByteEncoded = Base64.getEncoder().encode(("id:" + authorisation).getBytes());
+        encodedTicket = new String(authorizationByteEncoded);
+        request.addHeader("Authorization", "Basic " +encodedTicket);
+        
+        jwtFilter.doFilter(request, response, filterChain);
+        //header positionned
+        assertThat(response.getStatus()).isEqualTo(403);
+        
+        //---------------------------------------------------
+        //test that forbidden if claimed user is admin@app.activiti.com and admin2@app.activiti.com
+        //is positionned in the post request. They must be identical
+        response = new MockHttpServletResponse();
+        response.setStatus(200);
+        
+        request = new MockHttpServletRequest();
+        
+        request.setRequestURI("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setPathInfo("/alfresco/api/-default-/public/authentication/versions/1/tickets");
+        request.setMethod("POST");
+        requestPayload = "{\"userId\": \"admin2@app.activiti.com\", \"password\": \"" + jwt + "\"}";
+        
+        request.setContent(requestPayload.getBytes());
+        
+        authorizationByteEncoded = Base64.getEncoder().encode(("id:" + authorisation).getBytes());
+        //encodedTicket = new String(authorizationByteEncoded);
+        //request.addHeader("Authorization", "Basic " +encodedTicket);
+        
+        jwtFilter.doFilter(request, response, filterChain);
+        //header positionned
+        assertThat(response.getStatus()).isEqualTo(403);
+        
+
+  
+    }
+
     /**
      * Test login, request after log in, test with credential in AUTHORITY header
      * test using alf_ticket
@@ -240,6 +377,9 @@ public class Adfsecurity5ApplicationTests
  
         
     }
+    
+
+    
     
     /**
      * test that we got a 403 forbidden after log out
@@ -371,6 +511,9 @@ public class Adfsecurity5ApplicationTests
         assertThat(response.getStatus()).isEqualTo(403);
         
     }
+    
+
+    
     
     
     

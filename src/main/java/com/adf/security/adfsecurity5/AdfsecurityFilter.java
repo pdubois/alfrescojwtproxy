@@ -37,7 +37,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.mock.web.DelegatingServletInputStream;
 
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -52,7 +51,6 @@ public class AdfsecurityFilter implements Filter
     private FilterConfig filterConfig = null;
 
     private static final Logger logger = LoggerFactory.getLogger(AdfsecurityFilter.class);
-    
 
     private static ThreadLocal<Random> random = new ThreadLocal<Random>()
     {
@@ -70,122 +68,122 @@ public class AdfsecurityFilter implements Filter
     {
 
     }
-    
+
     /**
      * Manages the logout request
+     * 
      * @param req
      * @param response
      * @param chain
      */
-    private void manageLogout(HttpServletRequest req , ServletResponse response, FilterChain chain)
+    private void manageLogout(HttpServletRequest req, ServletResponse response, FilterChain chain)
     {
-        //try to logout
+        // try to logout
         HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req, false);
         HttpServletResponse responseOK = (HttpServletResponse) response;
-        
-        //trying yo dry ticket from header or alf_ticket
-        String headerSet = Optional.ofNullable(setHeaderFromAuthorizationHeader(requestWrapper)).
-                orElse(setHeaderFromAlfTicket(requestWrapper));
-                
+
+        // trying yo dry ticket from header or alf_ticket
+        String headerSet = Optional.ofNullable(setHeaderFromAuthorizationHeader(requestWrapper))
+                .orElse(setHeaderFromAlfTicket(requestWrapper));
+
         String alfTicket = null;
         if (headerSet != null && !headerSet.isEmpty())
         {
             String authorization = requestWrapper.getHeader("Authorization");
-            
+
             if (authorization != null && !authorization.isEmpty())
             {
-                //get second part of it, skip Basic<space>
-                String parts [] = authorization.split(" ");
+                // get second part of it, skip Basic<space>
+                String parts[] = authorization.split(" ");
                 if (parts != null && parts.length > 1)
                 {
-                    //decode the base 64 because it is encoded twice in base 64
+                    // decode the base 64 because it is encoded twice in base 64
                     byte[] decodedBytes = Base64.getDecoder().decode(parts[1]);
                     String jwtStill = new String(decodedBytes);
-                    
-                        
-                       String partsToken [] = jwtStill.split(":");
-                       if(partsToken != null && partsToken.length >1 )
-                       {
-                           
-                           //try to find the ticket in the map
-                           alfTicket = partsToken[1];
-                           
 
-                       }
+                    String partsToken[] = jwtStill.split(":");
+                    if (partsToken != null && partsToken.length > 1)
+                    {
+
+                        // try to find the ticket in the map
+                        alfTicket = partsToken[1];
+
                     }
-
                 }
+
             }
+        }
 
-            //looking for remote user and delete it
-            if(alfTicket != null)
-                ticketMap.compute(alfTicket, (s, o) -> null);
+        // looking for remote user and delete it
+        if (alfTicket != null)
+            ticketMap.compute(alfTicket, (s, o) -> null);
 
-        // status no content    
+        // status no content
         responseOK.setStatus(204);
-        
+
         return;
     }
-    
+
     protected void returnUnauthorized(ServletResponse response) throws IOException, ServletException
     {
-        //unauthorized
+        // unauthorized
         logger.info("+-+-+-+-+-+-+ unauthorized returned because Authorization or ALF_TICKET not present or not valid");
         ((HttpServletResponse) response).sendError(403);
         // return an error unauthorized
-        String error =  "{\"error\":{\"errorKey\":\"Login failed\",\"statusCode\":403,\"briefSummary\":\"01110880 Login failed\",\"" +
-        "\"stackTrace\":\"Pour des raisons de sécurité, le traçage de la pile n'est plus affiché, mais la propriété est conservée dans les versions précédente\"," +
-        "\"descriptionURL\":\"https://api-explorer.alfresco.com\"}}";
-                            
+        String error = "{\"error\":{\"errorKey\":\"Login failed\",\"statusCode\":403,\"briefSummary\":\"01110880 Login failed\",\""
+                + "\"stackTrace\":\"Pour des raisons de sécurité, le traçage de la pile n'est plus affiché, mais la propriété est conservée dans les versions précédente\","
+                + "\"descriptionURL\":\"https://api-explorer.alfresco.com\"}}";
+
         PrintWriter out = response.getWriter();
-        //send back the login error
+        // send back the login error
         out.print(error);
         out.flush();
-        
 
-        
-        return; 
+        return;
     }
-    
 
     /**
-     * This manages 
-     *      POST    /alfresco/api/-default-/public/authentication/versions/1/tickets to create tickets
-     *      DELETE  /alfresco/api/-default-/public/authentication/versions/1/tickets/-me- for logout
-     *      
-     *      It sets the "X-Alfresco-Remote-User" for other requests.
-     *      Alfresco must be configured in  pass through (see :http://docs.alfresco.com/6.0/concepts/auth-passthru-intro.html )
-     *      Once the JWT tohen authenticated, a ticket is generated by the filter an put in "ticketMap". Key is the ticket,
-     *      claimed identity is stored a a value.
-     *      On ervrty request, the ticket (identity) is transferred by the UI (ADF) and validated against the HTABLE.
-     *      If found "X-Alfresco-Remote-User" is set.
-     *      Ticket can be transferred using "ALF_TICKET" parameter or  "Authorization" header.
-     *      
-     *      It can be set in in passthrough mode setting "passthrough" parameter in config file.
-     *      DO NOT FORGET to protect your Alfresco by setting up firewall.
+     * This manages POST
+     * /alfresco/api/-default-/public/authentication/versions/1/tickets to create
+     * tickets DELETE
+     * /alfresco/api/-default-/public/authentication/versions/1/tickets/-me- for
+     * logout
+     * 
+     * It sets the "X-Alfresco-Remote-User" for other requests. Alfresco must be
+     * configured in pass through (see
+     * :http://docs.alfresco.com/6.0/concepts/auth-passthru-intro.html ) Once the
+     * JWT tohen authenticated, a ticket is generated by the filter an put in
+     * "ticketMap". Key is the ticket, claimed identity is stored a a value. On
+     * ervrty request, the ticket (identity) is transferred by the UI (ADF) and
+     * validated against the HTABLE. If found "X-Alfresco-Remote-User" is set.
+     * Ticket can be transferred using "ALF_TICKET" parameter or "Authorization"
+     * header.
+     * 
+     * It can be set in in passthrough mode setting "passthrough" parameter in
+     * config file. DO NOT FORGET to protect your Alfresco by setting up firewall.
      */
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException
     {
         int ran = random.get().nextInt(100000);
-        logger.info("Entering doFilter (" + ran  + ")");
-     
-        Assert.assertTrue(request!=null && response != null && chain!= null);
+        logger.info("Entering doFilter (" + ran + ")");
+
+        Assert.assertTrue(request != null && response != null && chain != null);
 
         String passthrough = this.filterConfig.getInitParameter("passthrough");
-        
+
         if (passthrough.equals("true"))
         {
-            //passthrough mode
+            // passthrough mode
             if (logger.isDebugEnabled())
             {
                 logger.debug("--------In passthrough mode");
             }
             chain.doFilter(request, response); // Goes to default servlet.
-            logger.info("Exit doFilter"  + " (" + ran  + ")");
+            logger.info("Exit doFilter" + " (" + ran + ")");
             return;
-            
+
         }
 
         if (request instanceof HttpServletRequest)
@@ -195,36 +193,32 @@ public class AdfsecurityFilter implements Filter
 
             if (logger.isDebugEnabled())
             {
-                logger.debug("--------In AdfsecurityFilter: " + req.getPathInfo() + " (" + ran  + ")");
-                logger.debug("--------Authorization: " + req.getHeader("Authorization") + " (" + ran  + ")");
-                Map<Object, String[]> params = Collections.list(req.getParameterNames())
-                .stream()
-                .collect(Collectors.toMap(parameterName -> parameterName, req::getParameterValues));
-                
-                logger.debug("--------alf_ticket: " + (params.get("alf_ticket")!= null ? params.get("alf_ticket")[0]: "null"));
+                logger.debug("--------In AdfsecurityFilter: " + req.getPathInfo() + " (" + ran + ")");
+                logger.debug("--------Authorization: " + req.getHeader("Authorization") + " (" + ran + ")");
+                Map<Object, String[]> params = Collections.list(req.getParameterNames()).stream()
+                        .collect(Collectors.toMap(parameterName -> parameterName, req::getParameterValues));
+
+                logger.debug("--------alf_ticket: "
+                        + (params.get("alf_ticket") != null ? params.get("alf_ticket")[0] : "null"));
             }
-            
+
             String pathInfo = req.getPathInfo();
             // /alfresco/api/-default-/public/authentication/versions/1/tickets/-me-
             if (pathInfo.startsWith("/alfresco/api/-default-/public/authentication/versions/1/tickets/-me-")
                     && req.getMethod().equalsIgnoreCase("DELETE"))
             {
-                //this is a logout request
-                manageLogout(req , response, chain);
-                logger.info("Exit doFilter (" + ran  + ")");
+                // this is a logout request
+                manageLogout(req, response, chain);
+                logger.info("Exit doFilter (" + ran + ")");
                 return;
             }
-            
-            
 
             // check if trying to get a ticket by checking the following url:
             // /alfresco/api/-default-/public/authentication/versions/1/tickets
             if (pathInfo.startsWith("/alfresco/api/-default-/public/authentication/versions/1/tickets")
                     && req.getMethod().equalsIgnoreCase("POST"))
             {
-                
-               
-                
+
                 // this under is done for 2 reasons:
                 // HEADERS can not be added directly on the request
                 // and BODY can only be read once this is why
@@ -232,148 +226,142 @@ public class AdfsecurityFilter implements Filter
                 HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req, true);
 
                 String loggedInUser = getHeaderFromAuthorizationHeader(requestWrapper);
-                if ( loggedInUser != null && !loggedInUser.isEmpty())
+                if (loggedInUser != null && !loggedInUser.isEmpty())
                 {
-                    returnUnauthorized( response);                    
-                    logger.info("Exit doFilter (" + ran  + ")");
-                    
-                    return; 
+                    returnUnauthorized(response);
+                    logger.info("Exit doFilter (" + ran + ")");
+
+                    return;
                 }
-                    
-                
+
                 if (logger.isDebugEnabled())
                 {
-                    logger.debug("In AdfsecurityFilter: " + req.getPathInfo() + " (" + ran  + ")");
-                    logger.debug("In AdfsecurityFilter password: " + req.getParameter("password") + " (" + ran  + ")");
+                    logger.debug("In AdfsecurityFilter: " + req.getPathInfo() + " (" + ran + ")");
+                    logger.debug("In AdfsecurityFilter password: " + req.getParameter("password") + " (" + ran + ")");
                 }
 
-
                 String bodyString = new String(requestWrapper.getStoredBody());
-                
-                if(logger.isDebugEnabled())
+
+                if (logger.isDebugEnabled())
                 {
                     logger.debug("In AdfsecurityFilter BODY: " + bodyString);
                 }
 
                 ObjectMapper mapper = new ObjectMapper();
                 JsonNode theJsonBody = mapper.readTree(bodyString);
-                
+
                 String passwordJwt = "" + theJsonBody.get("password");
-                if(logger.isDebugEnabled())
+                if (logger.isDebugEnabled())
                 {
                     logger.debug("The Claimed user is: " + theJsonBody.get("userId").toString());
                     logger.debug("The JWT token is: " + theJsonBody.get("password"));
                     logger.debug("The passwordJwt is: " + passwordJwt);
                 }
-                
-                //remove first and last "
+
+                // remove first and last "
                 passwordJwt = passwordJwt.replaceAll("\"", "");
                 Claims claims = null;
-                try {
+                try
+                {
                     claims = parseJWTEncodedB64(passwordJwt, this.filterConfig.getInitParameter("secret"));
                     String userInBody = theJsonBody.get("userId") + "";
                     userInBody = userInBody.replaceAll("\"", "");
-                    //test that the JWT token claimed user is same as userId 
-                    if(!userInBody.equals( claims.getIssuer()))
+                    // test that the JWT token claimed user is same as userId
+                    if (!userInBody.equals(claims.getIssuer()))
                     {
-                        if(logger.isDebugEnabled())
+                        if (logger.isDebugEnabled())
                         {
                             logger.debug("+-+-+- userId " + userInBody + " different from " + claims.getIssuer());
 
                         }
-                        throw new Exception("uid of the claim " + claims.getIssuer() + " not equal to userId of the json body" + userInBody);
+                        throw new Exception("uid of the claim " + claims.getIssuer()
+                                + " not equal to userId of the json body" + userInBody);
                     }
-                }
-                catch (Throwable   e)
+                } catch (Throwable e)
                 {
-                    
-                    returnUnauthorized( response);
-                    logger.info("jwt token can not be trusted because: ", e);                    
-                    logger.info("Exit doFilter (" + ran  + ")");
-                    
-                    return; 
+
+                    returnUnauthorized(response);
+                    logger.info("jwt token can not be trusted because: ", e);
+                    logger.info("Exit doFilter (" + ran + ")");
+
+                    return;
                 }
 
-                
-                
-                if(logger.isDebugEnabled())
+                if (logger.isDebugEnabled())
                 {
                     logger.debug("The positionned user is: " + claims.getIssuer());
                 }
-                
-                
+
                 // Do here the JWT checking/verification
                 // if All OK then
                 requestWrapper.addHeader("X-Alfresco-Remote-User", claims.getIssuer());
 
-                //set the headers
-                requestWrapper.addHeader("Access-Control-Allow-Origin","*");
-                requestWrapper.addHeader("cache-control","no-cache");
-                requestWrapper.addHeader("connection","close");
-                requestWrapper.addHeader("content-type","application/json;charset=UTF-8");
-                requestWrapper.addHeader("pragma","no-cache");
-                
+                // set the headers
+                requestWrapper.addHeader("Access-Control-Allow-Origin", "*");
+                requestWrapper.addHeader("cache-control", "no-cache");
+                requestWrapper.addHeader("connection", "close");
+                requestWrapper.addHeader("content-type", "application/json;charset=UTF-8");
+                requestWrapper.addHeader("pragma", "no-cache");
 
                 PrintWriter out = response.getWriter();
                 response.setContentType("application/json");
                 response.setCharacterEncoding("UTF-8");
-           
-                //issuer contains the user
+
+                // issuer contains the user
                 String issuer = claims.getIssuer();
-                
-                //generate ticket
+
+                // generate ticket
                 UUID uniqueKey = UUID.randomUUID();
-          
-                
+
                 ticketMap.put(uniqueKey.toString(), issuer);
-                
-                if(logger.isDebugEnabled())
+
+                if (logger.isDebugEnabled())
                 {
-                    logger.debug("+-+-+-+- The successful authentication is: " + "{\"entry\":{\"id\":\"" + uniqueKey + "\",\"userId\":\"" + issuer + "\"}}");
+                    logger.debug("+-+-+-+- The successful authentication is: " + "{\"entry\":{\"id\":\"" + uniqueKey
+                            + "\",\"userId\":\"" + issuer + "\"}}");
                 }
-                
-                //confirming here that all is OK
-                //example
-                //{"entry":{"id":"TICKET_592436e1f212f572cf9ff0e1c4283d0e74442d2e","userId":"admin@app.activiti.com"}}
+
+                // confirming here that all is OK
+                // example
+                // {"entry":{"id":"TICKET_592436e1f212f572cf9ff0e1c4283d0e74442d2e","userId":"admin@app.activiti.com"}}
                 out.print("{\"entry\":{\"id\":\"" + uniqueKey + "\",\"userId\":\"" + issuer + "\"}}");
                 out.flush();
-                
-                logger.info("Exit doFilter (" + ran  + ")");
+
+                logger.info("Exit doFilter (" + ran + ")");
 
             } else
             {
                 // we do not need to peek the body here
                 // just need to to be able to add the "X-Alfresco-Remote-User" for Alfresco
                 HeaderMapRequestWrapper requestWrapper = new HeaderMapRequestWrapper(req, false);
-                
-                //getting the positioned user from the jwt token 
-                //and position it in the header request
-                
-                //getting the header
-                String headerSet = Optional.ofNullable(setHeaderFromAuthorizationHeader(requestWrapper)).
-                        orElse(setHeaderFromAlfTicket(requestWrapper));
-                
-                
+
+                // getting the positioned user from the jwt token
+                // and position it in the header request
+
+                // getting the header
+                String headerSet = Optional.ofNullable(setHeaderFromAuthorizationHeader(requestWrapper))
+                        .orElse(setHeaderFromAlfTicket(requestWrapper));
+
                 if (headerSet != null && !headerSet.isEmpty())
                 {
-                    //found a valid authorisation
+                    // found a valid authorisation
                     chain.doFilter(requestWrapper, response); // Goes to default servlet.
-                    logger.info("Exit doFilter "  + " (" + ran  + ")");
-                }
-                else
+                    logger.info("Exit doFilter " + " (" + ran + ")");
+                } else
                 {
                     returnUnauthorized(response);
-                    //unauthorized
-                    logger.info("+-+-+-+-+-+-+ unauthorized returned because Authorization or ALF_TICKET not present or not valid");                    
-                    logger.info("Exit doFilter (" + ran  + ")");
-                    
-                    return; 
+                    // unauthorized
+                    logger.info(
+                            "+-+-+-+-+-+-+ unauthorized returned because Authorization or ALF_TICKET not present or not valid");
+                    logger.info("Exit doFilter (" + ran + ")");
+
+                    return;
                 }
             }
         } else
         {
             chain.doFilter(request, response); // Goes to default servlet.
-            logger.info("Exit doFilter"  + " (" + ran  + ")");
+            logger.info("Exit doFilter" + " (" + ran + ")");
         }
     }
 
@@ -382,37 +370,33 @@ public class AdfsecurityFilter implements Filter
         requestWrapper.addHeader("X-Alfresco-Remote-User", user);
         return user;
     }
-    
-    
+
     /**
      * Set header from Authorisation.
      */
     private String setHeaderFromAlfTicket(HeaderMapRequestWrapper requestWrapper)
     {
         Optional<String> ticket = Optional.ofNullable(requestWrapper.getParameter("alf_ticket"));
-        
-        return ticket.isPresent()? SetRemoteUser((String)ticketMap.get(ticket.get()), requestWrapper) : null;   
+
+        return ticket.isPresent() ? SetRemoteUser((String) ticketMap.get(ticket.get()), requestWrapper) : null;
     }
 
     /**
-     * Set header from Authorisation.
-     * It consist of position the "X-Alfresco-Remote-User" header for Alfresco
-     * pass through
+     * Set header from Authorisation. It consist of position the
+     * "X-Alfresco-Remote-User" header for Alfresco pass through
      */
     private String setHeaderFromAuthorizationHeader(HeaderMapRequestWrapper requestWrapper)
     {
-        
+
         String remoteUser = getHeaderFromAuthorizationHeader(requestWrapper);
-        
-        //position the header for Alfresco pass through
-        if(remoteUser!= null && !remoteUser.isEmpty())
+
+        // position the header for Alfresco pass through
+        if (remoteUser != null && !remoteUser.isEmpty())
             requestWrapper.addHeader("X-Alfresco-Remote-User", remoteUser);
-        
 
         return remoteUser;
     }
-    
-    
+
     /**
      * get user from Authorisation.
      */
@@ -430,45 +414,33 @@ public class AdfsecurityFilter implements Filter
                 // decode the base 64 because it is encoded twice in base 64
                 byte[] decodedBytes = Base64.getDecoder().decode(parts[1]);
                 String jwtStill = new String(decodedBytes);
-                try
+
+                String partsToken[] = jwtStill.split(":");
+                if (partsToken != null && partsToken.length > 1)
                 {
 
-                    String partsToken[] = jwtStill.split(":");
-                    if (partsToken != null && partsToken.length > 1)
-                    {
+                    // try to find the ticket in the map
+                    String remoteUser = ticketMap.get(partsToken[1]);
 
-                        // try to find the ticket in the map
-                        String remoteUser = ticketMap.get(partsToken[1]);
-
-                        if (logger.isDebugEnabled())
-                        {
-                            logger.debug("+-+-+-+- The Claimed user is: " + remoteUser);
-                            logger.debug("+-+-+-+- The token is: " + partsToken[1]);
-                        }
-
-                        return remoteUser;
-                    }
-                } catch (Exception e)
-                {
                     if (logger.isDebugEnabled())
                     {
-                        logger.debug("JWT token not valid, rejected : " + jwtStill);
+                        logger.debug("+-+-+-+- The Claimed user is: " + remoteUser);
+                        logger.debug("+-+-+-+- The token is: " + partsToken[1]);
                     }
-                    return null;
+
+                    return remoteUser;
                 }
             }
         }
         return null;
     }
-    
-    
 
     @SuppressWarnings("unused")
-    private String createJWTEncodedB64(String id, String issuer, String subject, long ttlMillis, String secret)
+    public String createJWTEncodedB64(String id, String issuer, String subject, long ttlMillis, String secret)
     {
         // Encode data on your side using BASE64
         byte[] bytesEncoded = Base64.getEncoder().encode(createJWT(id, issuer, subject, ttlMillis, secret).getBytes());
-        return new String(bytesEncoded);
+        return new String(bytesEncoded).replaceAll("=+$", "");
 
     }
 
@@ -524,7 +496,7 @@ public class AdfsecurityFilter implements Filter
      *            Key that is used to encrypt the token
      * @return
      */
-    private String createJWT(String id, String issuer, String subject, long ttlMillis, String secret)
+    public String createJWT(String id, String issuer, String subject, long ttlMillis, String secret)
     {
 
         // The JWT signature algorithm we will be using to sign the token
